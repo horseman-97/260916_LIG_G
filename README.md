@@ -24,7 +24,7 @@
    - **실시간 검색**: 제목 및 본문 실시간 즉각 검색 기능
 
 4. **신뢰할 수 있는 데이터 보관**
-   - 표준 경량 데이터베이스인 SQLite(`todos.db`)를 내장하여 서버 재시작 후에도 데이터 영구 보존
+   - Vercel Postgres(관리형 클라우드 DB)를 사용하여 서버 재시작·재배포 후에도 데이터 영구 보존
 
 ---
 
@@ -49,12 +49,25 @@ LIG_DNA_TODO_APP/
 
 ## 🚀 실행 방법
 
+이 앱은 Postgres 데이터베이스가 필요합니다 (로컬 SQLite는 더 이상 사용하지 않음). 프로젝트 루트에 `.env` 파일을 만들고 `.env.example`을 참고해 `POSTGRES_URL`을 채워주세요.
+
 ### 방법 1. 더블 클릭으로 바로 실행 (가장 추천)
-폴더 내 `run.bat` 파일을 더블 클릭하면 자동으로 브라우저가 열리고 서버가 실행됩니다.
+`.env` 설정 후, 폴더 내 `run.bat` 파일을 더블 클릭하면 자동으로 브라우저가 열리고 서버가 실행됩니다.
 
 ### 방법 2. 터미널 명령어로 직접 실행
 ```powershell
 cd c:\Users\user\Desktop\260916_CLAUDE_RPA\LIG_DNA_TODO_APP
+pip install -r requirements.txt
 python app.py
 ```
 브라우저에서 `http://127.0.0.1:5000` 으로 접속합니다.
+
+## ☁️ Vercel 배포
+
+이 저장소는 Vercel에서 바로 배포할 수 있도록 `vercel.json`이 구성되어 있습니다.
+
+1. Vercel 대시보드에서 이 GitHub 저장소(`260916_LIG_G`)를 Import
+2. Storage 탭에서 Postgres 데이터베이스를 생성 후 프로젝트에 연결 (환경변수 `POSTGRES_URL` 자동 주입)
+3. Deploy
+
+로컬에서 같은 DB로 테스트하려면 `vercel env pull .env` 명령으로 환경변수를 받아올 수 있습니다.

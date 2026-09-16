@@ -1,8 +1,12 @@
 import os
 import sys
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, date, timedelta
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
+
+load_dotenv()
 
 # Ensure UTF-8 output on Windows
 if sys.platform == 'win32':
@@ -15,11 +19,15 @@ if sys.platform == 'win32':
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lig-dna-todo-secret-key-2026'
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'todos.db')
+DATABASE_URL = os.environ.get('POSTGRES_URL') or os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    raise RuntimeError(
+        'POSTGRES_URL (or DATABASE_URL) environment variable is required. '
+        'Set it in a local .env file or in the Vercel project settings.'
+    )
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
 
 def init_db():
@@ -27,7 +35,7 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             description TEXT DEFAULT '',
             category TEXT DEFAULT '업무/프로젝트',
@@ -104,7 +112,7 @@ def init_db():
 
         cursor.executemany('''
             INSERT INTO todos (title, description, category, priority, due_date, completed, created_at, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ''', sample_tasks)
         conn.commit()
 
@@ -137,20 +145,20 @@ def get_todos():
         query += ' AND completed = 1'
 
     if category and category != 'all':
-        query += ' AND category = ?'
+        query += ' AND category = %s'
         params.append(category)
 
     if priority and priority != 'all':
-        query += ' AND priority = ?'
+        query += ' AND priority = %s'
         params.append(priority)
 
     if search:
-        query += ' AND (title LIKE ? OR description LIKE ?)'
+        query += ' AND (title LIKE %s OR description LIKE %s)'
         params.extend([f'%{search}%', f'%{search}%'])
 
     # Sorting
     if sort_by == 'due_date':
-        query += ' ORDER BY CASE WHEN due_date IS NULL OR due_date = "" THEN 1 ELSE 0 END, due_date ASC, id DESC'
+        query += " ORDER BY CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END, due_date ASC, id DESC"
     elif sort_by == 'priority':
         query += """
             ORDER BY CASE priority
@@ -190,12 +198,13 @@ def add_todo():
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO todos (title, description, category, priority, due_date, completed, created_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?)
+        VALUES (%s, %s, %s, %s, %s, 0, %s)
+        RETURNING id
     ''', (title, description, category, priority, due_date, now_str))
-    new_id = cursor.lastrowid
+    new_id = cursor.fetchone()['id']
     conn.commit()
 
-    cursor.execute('SELECT * FROM todos WHERE id = ?', (new_id,))
+    cursor.execute('SELECT * FROM todos WHERE id = %s', (new_id,))
     todo = dict(cursor.fetchone())
     conn.close()
 
@@ -205,7 +214,7 @@ def add_todo():
 def get_todo(todo_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM todos WHERE id = ?', (todo_id,))
+    cursor.execute('SELECT * FROM todos WHERE id = %s', (todo_id,))
     row = cursor.fetchone()
     conn.close()
 
@@ -231,8 +240,8 @@ def update_todo(todo_id):
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE todos
-        SET title = ?, description = ?, category = ?, priority = ?, due_date = ?
-        WHERE id = ?
+        SET title = %s, description = %s, category = %s, priority = %s, due_date = %s
+        WHERE id = %s
     ''', (title, description, category, priority, due_date, todo_id))
     conn.commit()
 
@@ -240,7 +249,7 @@ def update_todo(todo_id):
         conn.close()
         return jsonify({'error': '해당 할 일을 찾을 수 없습니다.'}), 404
 
-    cursor.execute('SELECT * FROM todos WHERE id = ?', (todo_id,))
+    cursor.execute('SELECT * FROM todos WHERE id = %s', (todo_id,))
     todo = dict(cursor.fetchone())
     conn.close()
 
@@ -250,7 +259,7 @@ def update_todo(todo_id):
 def toggle_todo(todo_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT completed FROM todos WHERE id = ?', (todo_id,))
+    cursor.execute('SELECT completed FROM todos WHERE id = %s', (todo_id,))
     row = cursor.fetchone()
 
     if not row:
@@ -262,12 +271,12 @@ def toggle_todo(todo_id):
 
     cursor.execute('''
         UPDATE todos
-        SET completed = ?, completed_at = ?
-        WHERE id = ?
+        SET completed = %s, completed_at = %s
+        WHERE id = %s
     ''', (new_status, completed_at, todo_id))
     conn.commit()
 
-    cursor.execute('SELECT * FROM todos WHERE id = ?', (todo_id,))
+    cursor.execute('SELECT * FROM todos WHERE id = %s', (todo_id,))
     todo = dict(cursor.fetchone())
     conn.close()
 
@@ -277,7 +286,7 @@ def toggle_todo(todo_id):
 def delete_todo(todo_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM todos WHERE id = ?', (todo_id,))
+    cursor.execute('DELETE FROM todos WHERE id = %s', (todo_id,))
     conn.commit()
     deleted = cursor.rowcount > 0
     conn.close()
@@ -322,7 +331,7 @@ def get_stats():
 
     # Due today count
     today_str = date.today().strftime('%Y-%m-%d')
-    cursor.execute('SELECT COUNT(*) as count FROM todos WHERE completed = 0 AND due_date = ?', (today_str,))
+    cursor.execute('SELECT COUNT(*) as count FROM todos WHERE completed = 0 AND due_date = %s', (today_str,))
     due_today = cursor.fetchone()['count']
 
     conn.close()
