@@ -3,6 +3,7 @@ import sys
 import psycopg2
 import psycopg2.extras
 from datetime import datetime, date, timedelta
+from urllib.parse import urlparse, urlencode, parse_qsl
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
 
@@ -19,12 +20,26 @@ if sys.platform == 'win32':
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lig-dna-todo-secret-key-2026'
 
+# libpq/psycopg2 only understands a specific set of DSN query params. Some
+# providers (e.g. Supabase) append extra tracking params to the connection
+# string that make psycopg2 reject the DSN, so strip anything unrecognized.
+_LIBPQ_PARAMS = {
+    'sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'connect_timeout',
+    'application_name', 'options', 'target_session_attrs', 'gssencmode',
+}
+
+def _sanitize_dsn(url):
+    parsed = urlparse(url)
+    query = [(k, v) for k, v in parse_qsl(parsed.query) if k in _LIBPQ_PARAMS]
+    return parsed._replace(query=urlencode(query)).geturl()
+
 DATABASE_URL = os.environ.get('POSTGRES_URL') or os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
     raise RuntimeError(
         'POSTGRES_URL (or DATABASE_URL) environment variable is required. '
         'Set it in a local .env file or in the Vercel project settings.'
     )
+DATABASE_URL = _sanitize_dsn(DATABASE_URL)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
