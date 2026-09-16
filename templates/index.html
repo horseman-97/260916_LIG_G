@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LIG DNA 스마트 투두 (Smart Todo)</title>
+    <title>LIG DNA 근무시간 관리</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,10 +21,10 @@
         <header class="main-header">
             <div class="brand-area">
                 <div class="brand-logo">
-                    <span class="logo-icon">⚡</span>
+                    <span class="logo-icon">⏱️</span>
                     <div class="logo-text">
                         <div class="logo-badge">LIG DNA WORKSPACE</div>
-                        <h1>스마트 투두 매니저</h1>
+                        <h1>근무시간 관리</h1>
                     </div>
                 </div>
             </div>
@@ -33,155 +33,122 @@
                     <span class="calendar-icon">📅</span>
                     <span id="currentDateText">로딩 중...</span>
                 </div>
-                <button class="btn btn-primary" id="openAddModalBtn">
-                    <span class="btn-icon">+</span>
-                    <span>새 할 일 등록</span>
-                </button>
             </div>
         </header>
 
-        <!-- Dashboard Stats Overview -->
-        <section class="stats-section">
-            <div class="stat-card" data-filter-status="all">
-                <div class="stat-icon-wrapper blue">📋</div>
-                <div class="stat-content">
-                    <span class="stat-label">전체 할 일</span>
-                    <span class="stat-value" id="statTotal">0</span>
+        <!-- Today Status Card -->
+        <section class="status-card" id="statusCard">
+            <div class="status-badge" id="statusBadge">확인 중...</div>
+
+            <div class="status-times" id="statusTimes">
+                <div class="status-time-item">
+                    <span class="status-time-label">출근</span>
+                    <span class="status-time-value" id="clockInText">--:--</span>
+                </div>
+                <div class="status-time-item">
+                    <span class="status-time-label">퇴근</span>
+                    <span class="status-time-value" id="clockOutText">--:--</span>
                 </div>
             </div>
-            <div class="stat-card" data-filter-status="active">
-                <div class="stat-icon-wrapper amber">⏳</div>
+
+            <div class="big-timer" id="bigTimer">00:00:00</div>
+            <div class="big-timer-caption" id="bigTimerCaption">오늘 아직 출근하지 않았습니다.</div>
+
+            <button class="btn btn-primary btn-clock" id="clockInBtn">출근하기</button>
+            <button class="btn btn-danger btn-clock" id="clockOutBtn" style="display:none;">퇴근하기</button>
+        </section>
+
+        <!-- Today Quick Stats -->
+        <section class="stats-section mini-stats" id="todayStats">
+            <div class="stat-card">
+                <div class="stat-icon-wrapper blue">⏳</div>
                 <div class="stat-content">
-                    <span class="stat-label">진행 중</span>
-                    <span class="stat-value" id="statActive">0</span>
-                </div>
-            </div>
-            <div class="stat-card" data-filter-status="completed">
-                <div class="stat-icon-wrapper emerald">✅</div>
-                <div class="stat-content">
-                    <span class="stat-label">완료됨</span>
-                    <span class="stat-value" id="statCompleted">0</span>
+                    <span class="stat-label">오늘 근무시간</span>
+                    <span class="stat-value" id="statTodayMinutes">-</span>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon-wrapper purple">🔥</div>
+                <div class="stat-icon-wrapper amber">🚪</div>
                 <div class="stat-content">
-                    <span class="stat-label">오늘 마감</span>
-                    <span class="stat-value" id="statDueToday">0</span>
+                    <span class="stat-label">예상 퇴근시간</span>
+                    <span class="stat-value" id="statExpectedOut">-</span>
                 </div>
             </div>
-            <div class="stat-card progress-card">
-                <div class="progress-info">
-                    <span class="stat-label">목표 달성률</span>
-                    <span class="progress-percentage" id="statRate">0%</span>
-                </div>
-                <div class="progress-bar-track">
-                    <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
-                </div>
-                <div class="progress-footer">
-                    <span id="progressMessage">오늘의 목표를 달성해보세요!</span>
+            <div class="stat-card">
+                <div class="stat-icon-wrapper emerald" id="statDiffIcon">📊</div>
+                <div class="stat-content">
+                    <span class="stat-label" id="statDiffLabel">목표 대비</span>
+                    <span class="stat-value" id="statDiffValue">-</span>
                 </div>
             </div>
         </section>
 
-        <!-- Quick Task Input Bar -->
-        <section class="quick-add-section">
-            <form id="quickAddForm" class="quick-add-form">
-                <div class="quick-input-group">
-                    <span class="quick-input-icon">✏️</span>
-                    <input 
-                        type="text" 
-                        id="quickTitleInput" 
-                        placeholder="새로운 할 일을 빠르게 입력하세요 (Enter 키로 즉시 등록)" 
-                        autocomplete="off"
-                        required
-                    >
+        <!-- Weekly / Monthly Summary -->
+        <section class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-card-header">
+                    <h3>이번 주 근무시간</h3>
+                    <span class="summary-total" id="weeklyTotal">0시간 0분</span>
                 </div>
-                <div class="quick-options">
-                    <select id="quickCategorySelect" class="styled-select-sm">
-                        <option value="DNA 과제">DNA 과제</option>
-                        <option value="업무/프로젝트" selected>업무/프로젝트</option>
-                        <option value="개인/자기계발">개인/자기계발</option>
-                        <option value="회의/미팅">회의/미팅</option>
-                        <option value="기타">기타</option>
-                    </select>
-                    <select id="quickPrioritySelect" class="styled-select-sm">
-                        <option value="높음">우선순위: 높음</option>
-                        <option value="보통" selected>우선순위: 보통</option>
-                        <option value="낮음">우선순위: 낮음</option>
-                    </select>
-                    <input type="date" id="quickDueDateInput" class="styled-date-sm" title="마감일">
-                    <button type="submit" class="btn btn-sm btn-primary">등록</button>
+                <div class="week-bar-chart" id="weekBarChart">
+                    <!-- Filled by JS -->
                 </div>
-            </form>
-        </section>
-
-        <!-- Filters & Tools Bar -->
-        <section class="controls-section">
-            <!-- Search Box -->
-            <div class="search-box">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="searchInput" placeholder="할 일 또는 상세 내용 검색..." autocomplete="off">
-                <button type="button" id="clearSearchBtn" class="clear-btn" style="display:none;">✕</button>
             </div>
-
-            <!-- Status Tabs -->
-            <div class="status-tabs" id="statusTabs">
-                <button type="button" class="tab-btn active" data-status="all">전체</button>
-                <button type="button" class="tab-btn" data-status="active">진행 중</button>
-                <button type="button" class="tab-btn" data-status="completed">완료</button>
-            </div>
-
-            <!-- Category Pills -->
-            <div class="category-pills" id="categoryPills">
-                <button type="button" class="pill-btn active" data-category="all">전체 카테고리</button>
-                <button type="button" class="pill-btn" data-category="DNA 과제">🧬 DNA 과제</button>
-                <button type="button" class="pill-btn" data-category="업무/프로젝트">💼 업무/프로젝트</button>
-                <button type="button" class="pill-btn" data-category="개인/자기계발">🌱 자기계발</button>
-                <button type="button" class="pill-btn" data-category="회의/미팅">👥 회의/미팅</button>
-                <button type="button" class="pill-btn" data-category="기타">📌 기타</button>
-            </div>
-
-            <!-- Right Controls: Sort & Bulk Clear -->
-            <div class="right-controls">
-                <div class="select-wrapper">
-                    <select id="sortBySelect" class="styled-select">
-                        <option value="created_desc">최신 등록순</option>
-                        <option value="due_date">마감일 임박순</option>
-                        <option value="priority">우선순위 높은순</option>
-                        <option value="created_asc">오래된 등록순</option>
-                    </select>
+            <div class="summary-card">
+                <div class="summary-card-header">
+                    <h3 id="monthlyTitle">이번 달</h3>
                 </div>
-                <button type="button" id="clearCompletedBtn" class="btn btn-outline-danger" title="완료된 항목 모두 삭제">
-                    완료 항목 정리
-                </button>
+                <div class="monthly-grid">
+                    <div class="monthly-item">
+                        <span class="monthly-label">총 근무일</span>
+                        <span class="monthly-value" id="monthlyWorkDays">0일</span>
+                    </div>
+                    <div class="monthly-item">
+                        <span class="monthly-label">총 근무시간</span>
+                        <span class="monthly-value" id="monthlyTotal">0시간 0분</span>
+                    </div>
+                    <div class="monthly-item">
+                        <span class="monthly-label">평균 근무시간</span>
+                        <span class="monthly-value" id="monthlyAvg">0시간 0분</span>
+                    </div>
+                </div>
             </div>
         </section>
 
-        <!-- Todo List Container -->
+        <!-- Date Lookup -->
+        <section class="date-lookup-section">
+            <div class="date-nav">
+                <button type="button" class="btn btn-secondary btn-sm" id="prevDateBtn">◀ 이전 날짜</button>
+                <input type="date" id="lookupDateInput" class="styled-date">
+                <button type="button" class="btn btn-secondary btn-sm" id="nextDateBtn">다음 날짜 ▶</button>
+                <button type="button" class="btn btn-outline-danger btn-sm" id="lookupTodayBtn">오늘로</button>
+            </div>
+            <div class="date-lookup-result" id="lookupResult">날짜를 선택해 근무 기록을 확인하세요.</div>
+        </section>
+
+        <!-- Records Table -->
         <main class="todos-container">
             <div class="todos-header">
-                <div class="count-info">
-                    총 <strong id="visibleCount">0</strong>개의 할 일
-                </div>
-                <div class="list-legend">
-                    <span class="legend-item"><span class="dot dot-high"></span>높음</span>
-                    <span class="legend-item"><span class="dot dot-medium"></span>보통</span>
-                    <span class="legend-item"><span class="dot dot-low"></span>낮음</span>
-                </div>
+                <div class="count-info">최근 근무 기록</div>
             </div>
 
-            <!-- Todo Items List -->
-            <div id="todoList" class="todo-list">
-                <!-- Dynamically generated with JS -->
+            <div class="records-table" id="recordsTable">
+                <div class="records-row records-row-head">
+                    <span>날짜</span>
+                    <span>출근</span>
+                    <span>퇴근</span>
+                    <span>휴게</span>
+                    <span>근무시간</span>
+                    <span>관리</span>
+                </div>
+                <div id="recordsList"><!-- Filled by JS --></div>
             </div>
 
             <!-- Empty State -->
             <div id="emptyState" class="empty-state" style="display: none;">
-                <div class="empty-icon">✨</div>
-                <h3 class="empty-title">표시할 할 일이 없습니다</h3>
-                <p class="empty-subtitle">새로운 할 일을 추가하고 알찬 하루를 시작해보세요!</p>
-                <button class="btn btn-primary btn-sm" id="emptyAddBtn">+ 첫 할 일 등록하기</button>
+                <div class="empty-icon">🗂️</div>
+                <h3 class="empty-title">근무 기록이 없습니다</h3>
+                <p class="empty-subtitle">출근하기 버튼을 눌러 첫 근무를 기록해보세요!</p>
             </div>
         </main>
 
@@ -191,97 +158,33 @@
         </footer>
     </div>
 
-    <!-- Detailed Add Modal -->
-    <div class="modal-overlay" id="addModalOverlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3>📝 새 할 일 등록</h3>
-                <button class="modal-close" id="closeAddModalBtn">&times;</button>
-            </div>
-            <form id="detailedAddForm">
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="modalAddTitle">제목 <span class="required">*</span></label>
-                        <input type="text" id="modalAddTitle" placeholder="어떤 일을 하실 예정인가요?" required autocomplete="off">
-                    </div>
-                    <div class="form-group">
-                        <label for="modalAddDesc">상세 메모</label>
-                        <textarea id="modalAddDesc" rows="3" placeholder="구체적인 업무 내용, 링크 또는 참고사항을 작성하세요."></textarea>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col">
-                            <label for="modalAddCategory">카테고리</label>
-                            <select id="modalAddCategory" class="styled-select">
-                                <option value="DNA 과제">🧬 DNA 과제</option>
-                                <option value="업무/프로젝트" selected>💼 업무/프로젝트</option>
-                                <option value="개인/자기계발">🌱 개인/자기계발</option>
-                                <option value="회의/미팅">👥 회의/미팅</option>
-                                <option value="기타">📌 기타</option>
-                            </select>
-                        </div>
-                        <div class="form-group col">
-                            <label for="modalAddPriority">우선순위</label>
-                            <select id="modalAddPriority" class="styled-select">
-                                <option value="높음">🔴 높음 (High)</option>
-                                <option value="보통" selected>🟡 보통 (Medium)</option>
-                                <option value="낮음">🟢 낮음 (Low)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="modalAddDueDate">마감 예정일</label>
-                        <input type="date" id="modalAddDueDate" class="styled-date">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" id="cancelAddBtn">취소</button>
-                    <button type="submit" class="btn btn-primary">등록하기</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Edit Task Modal -->
+    <!-- Edit Record Modal -->
     <div class="modal-overlay" id="editModalOverlay">
         <div class="modal-card">
             <div class="modal-header">
-                <h3>✏️ 할 일 수정</h3>
+                <h3>✏️ 근무 기록 수정</h3>
                 <button class="modal-close" id="closeEditModalBtn">&times;</button>
             </div>
             <form id="editForm">
-                <input type="hidden" id="editTodoId">
+                <input type="hidden" id="editRecordId">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="editTitle">제목 <span class="required">*</span></label>
-                        <input type="text" id="editTitle" required autocomplete="off">
-                    </div>
-                    <div class="form-group">
-                        <label for="editDesc">상세 메모</label>
-                        <textarea id="editDesc" rows="3"></textarea>
+                        <label>날짜</label>
+                        <input type="text" id="editWorkDate" disabled>
                     </div>
                     <div class="form-row">
                         <div class="form-group col">
-                            <label for="editCategory">카테고리</label>
-                            <select id="editCategory" class="styled-select">
-                                <option value="DNA 과제">🧬 DNA 과제</option>
-                                <option value="업무/프로젝트">💼 업무/프로젝트</option>
-                                <option value="개인/자기계발">🌱 개인/자기계발</option>
-                                <option value="회의/미팅">👥 회의/미팅</option>
-                                <option value="기타">📌 기타</option>
-                            </select>
+                            <label for="editClockIn">출근 시간</label>
+                            <input type="time" id="editClockIn" class="styled-date">
                         </div>
                         <div class="form-group col">
-                            <label for="editPriority">우선순위</label>
-                            <select id="editPriority" class="styled-select">
-                                <option value="높음">🔴 높음 (High)</option>
-                                <option value="보통">🟡 보통 (Medium)</option>
-                                <option value="낮음">🟢 낮음 (Low)</option>
-                            </select>
+                            <label for="editClockOut">퇴근 시간</label>
+                            <input type="time" id="editClockOut" class="styled-date">
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="editDueDate">마감 예정일</label>
-                        <input type="date" id="editDueDate" class="styled-date">
+                        <label for="editBreakMinutes">휴게시간 (분)</label>
+                        <input type="number" id="editBreakMinutes" min="0" step="5">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -294,9 +197,6 @@
 
     <!-- Toast Notification Container -->
     <div class="toast-container" id="toastContainer"></div>
-
-    <!-- Canvas Confetti for task completion joy -->
-    <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>

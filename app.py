@@ -2,7 +2,7 @@ import os
 import sys
 import psycopg2
 import psycopg2.extras
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlencode, parse_qsl
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
@@ -18,7 +18,7 @@ if sys.platform == 'win32':
         pass
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'lig-dna-todo-secret-key-2026'
+app.config['SECRET_KEY'] = 'lig-dna-worktime-secret-key-2026'
 
 # libpq/psycopg2 only understands a specific set of DSN query params. Some
 # providers (e.g. Supabase) append extra tracking params to the connection
@@ -41,6 +41,14 @@ if not DATABASE_URL:
     )
 DATABASE_URL = _sanitize_dsn(DATABASE_URL)
 
+# The app has no login system (single personal user), but the schema keeps a
+# user_id column so multi-user support can be added later without migrating.
+USER_ID = 'default'
+DEFAULT_BREAK_MINUTES = 60
+DEFAULT_TARGET_MINUTES = 480  # 8 hours
+DT_FMT = '%Y-%m-%d %H:%M:%S'
+KST = timezone(timedelta(hours=9))
+
 def get_db():
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
@@ -49,322 +57,366 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS todos (
+        CREATE TABLE IF NOT EXISTS work_records (
             id SERIAL PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            category TEXT DEFAULT '업무/프로젝트',
-            priority TEXT DEFAULT '보통',
-            due_date TEXT DEFAULT '',
-            completed INTEGER DEFAULT 0,
+            user_id TEXT NOT NULL DEFAULT 'default',
+            work_date TEXT NOT NULL,
+            clock_in TEXT,
+            clock_out TEXT,
+            break_minutes INTEGER NOT NULL DEFAULT 60,
+            work_minutes INTEGER,
             created_at TEXT NOT NULL,
-            completed_at TEXT
+            updated_at TEXT NOT NULL,
+            UNIQUE (user_id, work_date)
         )
     ''')
     conn.commit()
-
-    # Check if empty, insert default initial sample data
-    cursor.execute('SELECT COUNT(*) as count FROM todos')
-    if cursor.fetchone()['count'] == 0:
-        today = date.today()
-        tomorrow = today + timedelta(days=1)
-        in_3_days = today + timedelta(days=3)
-        in_5_days = today + timedelta(days=5)
-        in_7_days = today + timedelta(days=7)
-
-        sample_tasks = [
-            (
-                'LIG DNA 3분기 디지털 혁신 역량 강화 과제 발표 준비',
-                'RPA 및 AI 도구를 접목한 실무 업무 혁신 사례 요약 슬라이드 작성 및 데모 시연 준비',
-                'DNA 과제',
-                '높음',
-                tomorrow.strftime('%Y-%m-%d'),
-                0,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                None
-            ),
-            (
-                'Python Flask 기반 스마트 투두 시스템 환경 점검 및 배포',
-                '로컬 개발 환경 구축 및 웹 서비스 기본 라우팅 검증 완료',
-                '업무/프로젝트',
-                '보통',
-                today.strftime('%Y-%m-%d'),
-                1,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            ),
-            (
-                '주간 RPA 자동화 워크플로우 운영 현황 보고서 작성',
-                '업무 자동화 성과 지표(시간 절감량, 처리 건수) 취합 및 보고 자료 구성',
-                '업무/프로젝트',
-                '높음',
-                in_3_days.strftime('%Y-%m-%d'),
-                0,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                None
-            ),
-            (
-                '생성형 AI 프롬프트 엔지니어링 실무 기법 스터디',
-                '업무 생산성 극대화를 위한 맞춤형 템플릿 및 자동화 연계 방안 학습',
-                '개인/자기계발',
-                '보통',
-                in_5_days.strftime('%Y-%m-%d'),
-                0,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                None
-            ),
-            (
-                '스마트 워크플레이스 개선 아이디어 브레인스토밍 회의',
-                '팀 내 업무 효율 향상을 위한 신규 협업 툴 도입 및 프로세스 개선 토론',
-                '회의/미팅',
-                '낮음',
-                in_7_days.strftime('%Y-%m-%d'),
-                0,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                None
-            )
-        ]
-
-        cursor.executemany('''
-            INSERT INTO todos (title, description, category, priority, due_date, completed, created_at, completed_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ''', sample_tasks)
-        conn.commit()
-
     conn.close()
 
 # Initialize DB when app starts
 init_db()
 
+def now_kst():
+    return datetime.now(KST)
+
+def today_str():
+    return now_kst().strftime('%Y-%m-%d')
+
+def is_valid_date(value):
+    try:
+        datetime.strptime(value, '%Y-%m-%d')
+        return True
+    except (ValueError, TypeError):
+        return False
+
+def is_valid_datetime(value):
+    try:
+        datetime.strptime(value, DT_FMT)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+def compute_work_minutes(clock_in_str, clock_out_str, break_minutes):
+    t_in = datetime.strptime(clock_in_str, DT_FMT)
+    t_out = datetime.strptime(clock_out_str, DT_FMT)
+    total_minutes = int((t_out - t_in).total_seconds() // 60)
+    return max(total_minutes - break_minutes, 0)
+
+def serialize_record(row):
+    data = dict(row)
+    if data.get('clock_out'):
+        data['status'] = 'done'
+    elif data.get('clock_in'):
+        data['status'] = 'working'
+    else:
+        data['status'] = 'not_started'
+    return data
+
+def empty_record(work_date):
+    return {
+        'work_date': work_date,
+        'clock_in': None,
+        'clock_out': None,
+        'break_minutes': DEFAULT_BREAK_MINUTES,
+        'work_minutes': None,
+        'status': 'not_started',
+    }
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/api/todos', methods=['GET'])
-def get_todos():
-    status = request.args.get('status', 'all')
-    category = request.args.get('category', 'all')
-    priority = request.args.get('priority', 'all')
-    search = request.args.get('search', '').strip()
-    sort_by = request.args.get('sort_by', 'created_desc')
-
+@app.route('/api/work/today', methods=['GET'])
+def work_today():
     conn = get_db()
     cursor = conn.cursor()
-
-    query = 'SELECT * FROM todos WHERE 1=1'
-    params = []
-
-    if status == 'active':
-        query += ' AND completed = 0'
-    elif status == 'completed':
-        query += ' AND completed = 1'
-
-    if category and category != 'all':
-        query += ' AND category = %s'
-        params.append(category)
-
-    if priority and priority != 'all':
-        query += ' AND priority = %s'
-        params.append(priority)
-
-    if search:
-        query += ' AND (title LIKE %s OR description LIKE %s)'
-        params.extend([f'%{search}%', f'%{search}%'])
-
-    # Sorting
-    if sort_by == 'due_date':
-        query += " ORDER BY CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END, due_date ASC, id DESC"
-    elif sort_by == 'priority':
-        query += """
-            ORDER BY CASE priority
-                WHEN '높음' THEN 1
-                WHEN '보통' THEN 2
-                WHEN '낮음' THEN 3
-                ELSE 4
-            END, id DESC
-        """
-    elif sort_by == 'created_asc':
-        query += ' ORDER BY id ASC'
-    else:  # created_desc
-        query += ' ORDER BY id DESC'
-
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    todos = [dict(row) for row in rows]
-    conn.close()
-
-    return jsonify(todos)
-
-@app.route('/api/todos', methods=['POST'])
-def add_todo():
-    data = request.get_json() or {}
-    title = data.get('title', '').strip()
-
-    if not title:
-        return jsonify({'error': '할 일 제목을 입력해주세요.'}), 400
-
-    description = data.get('description', '').strip()
-    category = data.get('category', '업무/프로젝트')
-    priority = data.get('priority', '보통')
-    due_date = data.get('due_date', '').strip()
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO todos (title, description, category, priority, due_date, completed, created_at)
-        VALUES (%s, %s, %s, %s, %s, 0, %s)
-        RETURNING id
-    ''', (title, description, category, priority, due_date, now_str))
-    new_id = cursor.fetchone()['id']
-    conn.commit()
-
-    cursor.execute('SELECT * FROM todos WHERE id = %s', (new_id,))
-    todo = dict(cursor.fetchone())
-    conn.close()
-
-    return jsonify(todo), 201
-
-@app.route('/api/todos/<int:todo_id>', methods=['GET'])
-def get_todo(todo_id):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM todos WHERE id = %s', (todo_id,))
+    cursor.execute(
+        'SELECT * FROM work_records WHERE user_id = %s AND work_date = %s',
+        (USER_ID, today_str())
+    )
     row = cursor.fetchone()
     conn.close()
 
     if not row:
-        return jsonify({'error': '해당 할 일을 찾을 수 없습니다.'}), 404
+        data = empty_record(today_str())
+    else:
+        data = serialize_record(row)
 
-    return jsonify(dict(row))
+    data['target_minutes'] = DEFAULT_TARGET_MINUTES
+    data['expected_clock_out'] = None
+    if data['clock_in'] and not data['clock_out']:
+        t_in = datetime.strptime(data['clock_in'], DT_FMT)
+        break_minutes = data['break_minutes'] or 0
+        expected = t_in + timedelta(minutes=DEFAULT_TARGET_MINUTES + break_minutes)
+        data['expected_clock_out'] = expected.strftime(DT_FMT)
 
-@app.route('/api/todos/<int:todo_id>', methods=['PUT'])
-def update_todo(todo_id):
-    data = request.get_json() or {}
-    title = data.get('title', '').strip()
+    return jsonify(data)
 
-    if not title:
-        return jsonify({'error': '할 일 제목을 입력해주세요.'}), 400
-
-    description = data.get('description', '').strip()
-    category = data.get('category', '업무/프로젝트')
-    priority = data.get('priority', '보통')
-    due_date = data.get('due_date', '').strip()
-
+@app.route('/api/work/clock-in', methods=['POST'])
+def clock_in():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE todos
-        SET title = %s, description = %s, category = %s, priority = %s, due_date = %s
-        WHERE id = %s
-    ''', (title, description, category, priority, due_date, todo_id))
-    conn.commit()
-
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({'error': '해당 할 일을 찾을 수 없습니다.'}), 404
-
-    cursor.execute('SELECT * FROM todos WHERE id = %s', (todo_id,))
-    todo = dict(cursor.fetchone())
-    conn.close()
-
-    return jsonify(todo)
-
-@app.route('/api/todos/<int:todo_id>/toggle', methods=['PATCH'])
-def toggle_todo(todo_id):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT completed FROM todos WHERE id = %s', (todo_id,))
+    today = today_str()
+    cursor.execute(
+        'SELECT * FROM work_records WHERE user_id = %s AND work_date = %s',
+        (USER_ID, today)
+    )
     row = cursor.fetchone()
 
-    if not row:
+    if row and row['clock_in']:
         conn.close()
-        return jsonify({'error': '해당 할 일을 찾을 수 없습니다.'}), 404
+        return jsonify({'error': '이미 오늘 출근 기록이 있습니다.'}), 400
 
-    new_status = 0 if row['completed'] == 1 else 1
-    completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S') if new_status == 1 else None
+    now_str = now_kst().strftime(DT_FMT)
+    try:
+        if row:
+            cursor.execute(
+                'UPDATE work_records SET clock_in = %s, updated_at = %s WHERE id = %s',
+                (now_str, now_str, row['id'])
+            )
+            record_id = row['id']
+        else:
+            cursor.execute('''
+                INSERT INTO work_records (user_id, work_date, clock_in, break_minutes, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (USER_ID, today, now_str, DEFAULT_BREAK_MINUTES, now_str, now_str))
+            record_id = cursor.fetchone()['id']
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': '출근 기록을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'}), 500
 
-    cursor.execute('''
-        UPDATE todos
-        SET completed = %s, completed_at = %s
-        WHERE id = %s
-    ''', (new_status, completed_at, todo_id))
-    conn.commit()
-
-    cursor.execute('SELECT * FROM todos WHERE id = %s', (todo_id,))
-    todo = dict(cursor.fetchone())
+    cursor.execute('SELECT * FROM work_records WHERE id = %s', (record_id,))
+    result = serialize_record(cursor.fetchone())
     conn.close()
+    return jsonify(result), 201
 
-    return jsonify(todo)
-
-@app.route('/api/todos/<int:todo_id>', methods=['DELETE'])
-def delete_todo(todo_id):
+@app.route('/api/work/clock-out', methods=['POST'])
+def clock_out():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM todos WHERE id = %s', (todo_id,))
+    today = today_str()
+    cursor.execute(
+        'SELECT * FROM work_records WHERE user_id = %s AND work_date = %s',
+        (USER_ID, today)
+    )
+    row = cursor.fetchone()
+
+    if not row or not row['clock_in']:
+        conn.close()
+        return jsonify({'error': '출근 기록이 없어 퇴근할 수 없습니다.'}), 400
+
+    if row['clock_out']:
+        conn.close()
+        return jsonify({'error': '이미 퇴근 처리된 근무 기록입니다.'}), 400
+
+    now_str = now_kst().strftime(DT_FMT)
+    break_minutes = row['break_minutes'] if row['break_minutes'] is not None else DEFAULT_BREAK_MINUTES
+    work_minutes = compute_work_minutes(row['clock_in'], now_str, break_minutes)
+
+    try:
+        cursor.execute('''
+            UPDATE work_records
+            SET clock_out = %s, work_minutes = %s, updated_at = %s
+            WHERE id = %s
+        ''', (now_str, work_minutes, now_str, row['id']))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': '퇴근 기록을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'}), 500
+
+    cursor.execute('SELECT * FROM work_records WHERE id = %s', (row['id'],))
+    result = serialize_record(cursor.fetchone())
+    conn.close()
+    return jsonify(result)
+
+@app.route('/api/work/records', methods=['GET'])
+def list_records():
+    limit = request.args.get('limit', 30, type=int)
+    limit = max(1, min(limit, 365))
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM work_records
+        WHERE user_id = %s
+        ORDER BY work_date DESC
+        LIMIT %s
+    ''', (USER_ID, limit))
+    rows = [serialize_record(r) for r in cursor.fetchall()]
+    conn.close()
+
+    return jsonify(rows)
+
+@app.route('/api/work/records/<work_date>', methods=['GET'])
+def get_record_by_date(work_date):
+    if not is_valid_date(work_date):
+        return jsonify({'error': '날짜 형식이 올바르지 않습니다.'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM work_records WHERE user_id = %s AND work_date = %s',
+        (USER_ID, work_date)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify(empty_record(work_date))
+
+    return jsonify(serialize_record(row))
+
+@app.route('/api/work/records/<int:record_id>', methods=['PUT'])
+def update_record(record_id):
+    data = request.get_json() or {}
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM work_records WHERE id = %s AND user_id = %s',
+        (record_id, USER_ID)
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': '해당 근무 기록을 찾을 수 없습니다.'}), 404
+
+    clock_in_val = data.get('clock_in', row['clock_in']) or None
+    clock_out_val = data.get('clock_out', row['clock_out']) or None
+    break_minutes = data.get('break_minutes', row['break_minutes'])
+
+    try:
+        break_minutes = int(break_minutes)
+    except (TypeError, ValueError):
+        conn.close()
+        return jsonify({'error': '휴게시간 형식이 올바르지 않습니다.'}), 400
+    if break_minutes < 0:
+        conn.close()
+        return jsonify({'error': '휴게시간은 0 이상이어야 합니다.'}), 400
+
+    for value, label in ((clock_in_val, '출근'), (clock_out_val, '퇴근')):
+        if value and not is_valid_datetime(value):
+            conn.close()
+            return jsonify({'error': f'{label} 시간 형식이 올바르지 않습니다.'}), 400
+
+    if clock_out_val and not clock_in_val:
+        conn.close()
+        return jsonify({'error': '출근 시간 없이 퇴근 시간만 저장할 수 없습니다.'}), 400
+
+    work_minutes = None
+    if clock_in_val and clock_out_val:
+        if clock_out_val <= clock_in_val:
+            conn.close()
+            return jsonify({'error': '퇴근 시간은 출근 시간보다 늦어야 합니다.'}), 400
+        work_minutes = compute_work_minutes(clock_in_val, clock_out_val, break_minutes)
+
+    now_str = now_kst().strftime(DT_FMT)
+    try:
+        cursor.execute('''
+            UPDATE work_records
+            SET clock_in = %s, clock_out = %s, break_minutes = %s, work_minutes = %s, updated_at = %s
+            WHERE id = %s
+        ''', (clock_in_val, clock_out_val, break_minutes, work_minutes, now_str, record_id))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': '근무 기록을 수정하지 못했습니다. 잠시 후 다시 시도해주세요.'}), 500
+
+    cursor.execute('SELECT * FROM work_records WHERE id = %s', (record_id,))
+    result = serialize_record(cursor.fetchone())
+    conn.close()
+    return jsonify(result)
+
+@app.route('/api/work/records/<int:record_id>', methods=['DELETE'])
+def delete_record(record_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'DELETE FROM work_records WHERE id = %s AND user_id = %s',
+        (record_id, USER_ID)
+    )
     conn.commit()
     deleted = cursor.rowcount > 0
     conn.close()
 
     if not deleted:
-        return jsonify({'error': '해당 할 일을 찾을 수 없습니다.'}), 404
+        return jsonify({'error': '해당 근무 기록을 찾을 수 없습니다.'}), 404
 
     return jsonify({'success': True, 'message': '삭제되었습니다.'})
 
-@app.route('/api/todos/clear-completed', methods=['POST'])
-def clear_completed():
+@app.route('/api/work/summary/weekly', methods=['GET'])
+def weekly_summary():
+    ref_str = request.args.get('date', today_str())
+    if not is_valid_date(ref_str):
+        return jsonify({'error': '날짜 형식이 올바르지 않습니다.'}), 400
+
+    ref = datetime.strptime(ref_str, '%Y-%m-%d').date()
+    monday = ref - timedelta(days=ref.weekday())
+    sunday = monday + timedelta(days=6)
+
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM todos WHERE completed = 1')
-    deleted_count = cursor.rowcount
-    conn.commit()
+    cursor.execute('''
+        SELECT work_date, work_minutes FROM work_records
+        WHERE user_id = %s AND work_date >= %s AND work_date <= %s
+    ''', (USER_ID, monday.strftime('%Y-%m-%d'), sunday.strftime('%Y-%m-%d')))
+    minutes_by_date = {r['work_date']: (r['work_minutes'] or 0) for r in cursor.fetchall()}
     conn.close()
 
-    return jsonify({'success': True, 'deleted_count': deleted_count})
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute('SELECT COUNT(*) as total FROM todos')
-    total = cursor.fetchone()['total']
-
-    cursor.execute('SELECT COUNT(*) as completed FROM todos WHERE completed = 1')
-    completed = cursor.fetchone()['completed']
-
-    active = total - completed
-    rate = round((completed / total * 100), 1) if total > 0 else 0
-
-    # Category stats
-    cursor.execute('SELECT category, COUNT(*) as count FROM todos GROUP BY category')
-    category_counts = {row['category']: row['count'] for row in cursor.fetchall()}
-
-    # Priority stats (active only)
-    cursor.execute('SELECT priority, COUNT(*) as count FROM todos WHERE completed = 0 GROUP BY priority')
-    priority_counts = {row['priority']: row['count'] for row in cursor.fetchall()}
-
-    # Due today count
-    today_str = date.today().strftime('%Y-%m-%d')
-    cursor.execute('SELECT COUNT(*) as count FROM todos WHERE completed = 0 AND due_date = %s', (today_str,))
-    due_today = cursor.fetchone()['count']
-
-    conn.close()
+    days = []
+    total_minutes = 0
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        d_str = d.strftime('%Y-%m-%d')
+        minutes = minutes_by_date.get(d_str, 0)
+        total_minutes += minutes
+        days.append({'date': d_str, 'work_minutes': minutes})
 
     return jsonify({
-        'total': total,
-        'completed': completed,
-        'active': active,
-        'rate': rate,
-        'due_today': due_today,
-        'category_counts': category_counts,
-        'priority_counts': priority_counts
+        'week_start': monday.strftime('%Y-%m-%d'),
+        'week_end': sunday.strftime('%Y-%m-%d'),
+        'days': days,
+        'total_minutes': total_minutes,
+    })
+
+@app.route('/api/work/summary/monthly', methods=['GET'])
+def monthly_summary():
+    year = request.args.get('year', type=int) or now_kst().year
+    month = request.args.get('month', type=int) or now_kst().month
+    if month < 1 or month > 12:
+        return jsonify({'error': '월 형식이 올바르지 않습니다.'}), 400
+
+    prefix = f'{year:04d}-{month:02d}'
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT work_minutes FROM work_records
+        WHERE user_id = %s AND work_date LIKE %s AND work_minutes IS NOT NULL
+    ''', (USER_ID, f'{prefix}-%'))
+    minutes_list = [r['work_minutes'] for r in cursor.fetchall()]
+    conn.close()
+
+    work_days = len(minutes_list)
+    total_minutes = sum(minutes_list)
+    avg_minutes = round(total_minutes / work_days) if work_days else 0
+
+    return jsonify({
+        'year': year,
+        'month': month,
+        'work_days': work_days,
+        'total_minutes': total_minutes,
+        'avg_minutes': avg_minutes,
     })
 
 if __name__ == '__main__':
     # Host 127.0.0.1, port 5000 with debug disabled for stability
     print("==================================================")
-    print("  [LIG DNA SMART TODO APP] Server Started")
+    print("  [LIG DNA WORK TIME APP] Server Started")
     print("  URL: http://127.0.0.1:5000")
     print("==================================================")
     app.run(host='127.0.0.1', port=5000, debug=True)

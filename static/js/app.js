@@ -1,383 +1,390 @@
 /**
- * LIG DNA Smart Todo App - Interactive Frontend Logic
+ * LIG DNA Work Time App - Interactive Frontend Logic
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Current Filter & Sort State
-    const state = {
-        status: 'all',
-        category: 'all',
-        search: '',
-        sortBy: 'created_desc',
-        todos: []
-    };
+    const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
     // DOM Elements
-    const todoList = document.getElementById('todoList');
-    const emptyState = document.getElementById('emptyState');
-    const visibleCount = document.getElementById('visibleCount');
-    const searchInput = document.getElementById('searchInput');
-    const clearSearchBtn = document.getElementById('clearSearchBtn');
-    const statusTabs = document.getElementById('statusTabs');
-    const categoryPills = document.getElementById('categoryPills');
-    const sortBySelect = document.getElementById('sortBySelect');
-    const clearCompletedBtn = document.getElementById('clearCompletedBtn');
-
-    // Stats Elements
-    const statTotal = document.getElementById('statTotal');
-    const statActive = document.getElementById('statActive');
-    const statCompleted = document.getElementById('statCompleted');
-    const statDueToday = document.getElementById('statDueToday');
-    const statRate = document.getElementById('statRate');
-    const progressBarFill = document.getElementById('progressBarFill');
-    const progressMessage = document.getElementById('progressMessage');
     const currentDateText = document.getElementById('currentDateText');
+    const statusBadge = document.getElementById('statusBadge');
+    const clockInText = document.getElementById('clockInText');
+    const clockOutText = document.getElementById('clockOutText');
+    const bigTimer = document.getElementById('bigTimer');
+    const bigTimerCaption = document.getElementById('bigTimerCaption');
+    const clockInBtn = document.getElementById('clockInBtn');
+    const clockOutBtn = document.getElementById('clockOutBtn');
 
-    // Modals
-    const addModalOverlay = document.getElementById('addModalOverlay');
-    const openAddModalBtn = document.getElementById('openAddModalBtn');
-    const closeAddModalBtn = document.getElementById('closeAddModalBtn');
-    const cancelAddBtn = document.getElementById('cancelAddBtn');
-    const detailedAddForm = document.getElementById('detailedAddForm');
-    const emptyAddBtn = document.getElementById('emptyAddBtn');
+    const statTodayMinutes = document.getElementById('statTodayMinutes');
+    const statExpectedOut = document.getElementById('statExpectedOut');
+    const statDiffLabel = document.getElementById('statDiffLabel');
+    const statDiffValue = document.getElementById('statDiffValue');
+
+    const weeklyTotal = document.getElementById('weeklyTotal');
+    const weekBarChart = document.getElementById('weekBarChart');
+    const monthlyTitle = document.getElementById('monthlyTitle');
+    const monthlyWorkDays = document.getElementById('monthlyWorkDays');
+    const monthlyTotal = document.getElementById('monthlyTotal');
+    const monthlyAvg = document.getElementById('monthlyAvg');
+
+    const prevDateBtn = document.getElementById('prevDateBtn');
+    const nextDateBtn = document.getElementById('nextDateBtn');
+    const lookupTodayBtn = document.getElementById('lookupTodayBtn');
+    const lookupDateInput = document.getElementById('lookupDateInput');
+    const lookupResult = document.getElementById('lookupResult');
+
+    const recordsList = document.getElementById('recordsList');
+    const emptyState = document.getElementById('emptyState');
 
     const editModalOverlay = document.getElementById('editModalOverlay');
     const closeEditModalBtn = document.getElementById('closeEditModalBtn');
     const cancelEditBtn = document.getElementById('cancelEditBtn');
     const editForm = document.getElementById('editForm');
 
-    // Quick Add Form
-    const quickAddForm = document.getElementById('quickAddForm');
-    const quickTitleInput = document.getElementById('quickTitleInput');
-    const quickCategorySelect = document.getElementById('quickCategorySelect');
-    const quickPrioritySelect = document.getElementById('quickPrioritySelect');
-    const quickDueDateInput = document.getElementById('quickDueDateInput');
+    let liveTimerHandle = null;
+    let todayState = null;
 
-    // 1. Initialize Date & Current Time
+    // ---- KST-aware time helpers ---------------------------------------
+    // The server stores/returns wall-clock KST strings ("YYYY-MM-DD HH:MM:SS").
+    // This trick reads the browser clock through the Asia/Seoul timezone so
+    // client-side calculations line up with what the server recorded,
+    // regardless of the visitor's actual local timezone.
+    function nowKST() {
+        return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    }
+
+    function todayKSTStr() {
+        const d = nowKST();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    function parseWallClock(str) {
+        // "YYYY-MM-DD HH:MM:SS" -> Date, parsed consistently with nowKST()
+        return new Date(str.replace(' ', 'T'));
+    }
+
+    function timeOnly(str) {
+        if (!str) return '--:--';
+        return str.slice(11, 16);
+    }
+
+    function formatMinutes(minutes) {
+        if (minutes === null || minutes === undefined) return '-';
+        const h = Math.floor(minutes / 60);
+        const m = minutes % 60;
+        return `${h}시간 ${m}분`;
+    }
+
+    function formatElapsed(ms) {
+        const totalSec = Math.max(Math.floor(ms / 1000), 0);
+        const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+        const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+        const s = String(totalSec % 60).padStart(2, '0');
+        return `${h}:${m}:${s}`;
+    }
+
+    // ---- Header date --------------------------------------------------
     function initDateDisplay() {
-        const now = new Date();
-        const days = ['일', '월', '화', '수', '목', '금', '토'];
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const date = String(now.getDate()).padStart(2, '0');
-        const dayName = days[now.getDay()];
-        currentDateText.textContent = `${year}년 ${month}월 ${date}일 (${dayName})`;
-
-        // Set default date picker values to today
-        const todayIso = now.toISOString().split('T')[0];
-        quickDueDateInput.value = todayIso;
+        const now = nowKST();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const dayName = DAY_NAMES[now.getDay()];
+        currentDateText.textContent = `${y}년 ${m}월 ${d}일 (${dayName})`;
     }
 
-    // 2. Fetch Stats from Backend
-    async function fetchStats() {
+    // ---- Today status card ---------------------------------------------
+    async function fetchToday() {
         try {
-            const res = await fetch('/api/stats');
-            if (!res.ok) throw new Error('Failed to fetch stats');
-            const data = await res.json();
-
-            statTotal.textContent = data.total;
-            statActive.textContent = data.active;
-            statCompleted.textContent = data.completed;
-            statDueToday.textContent = data.due_today;
-            statRate.textContent = `${data.rate}%`;
-            progressBarFill.style.width = `${data.rate}%`;
-
-            if (data.rate === 100 && data.total > 0) {
-                progressMessage.textContent = '🎉 모든 할 일을 완수했습니다! 멋진 하루입니다!';
-            } else if (data.rate >= 50) {
-                progressMessage.textContent = '🔥 절반 이상 달성! 조금만 더 힘내세요!';
-            } else {
-                progressMessage.textContent = '오늘의 과제를 차근차근 해결해보세요.';
-            }
+            const res = await fetch('/api/work/today');
+            if (!res.ok) throw new Error('Failed to fetch today status');
+            todayState = await res.json();
+            renderStatus(todayState);
         } catch (err) {
-            console.error('Error fetching stats:', err);
+            console.error('fetchToday error:', err);
+            showToast('오늘의 근무 상태를 불러오지 못했습니다.', 'error');
         }
     }
 
-    // 3. Fetch Todos from Backend
-    async function fetchTodos() {
-        try {
-            const params = new URLSearchParams({
-                status: state.status,
-                category: state.category,
-                search: state.search,
-                sort_by: state.sortBy
-            });
+    function renderStatus(data) {
+        clockInText.textContent = timeOnly(data.clock_in);
+        clockOutText.textContent = timeOnly(data.clock_out);
 
-            const res = await fetch(`/api/todos?${params.toString()}`);
-            if (!res.ok) throw new Error('Failed to fetch todos');
-            const todos = await res.json();
-            state.todos = todos;
+        stopLiveTimer();
 
-            renderTodos(todos);
-            fetchStats();
-        } catch (err) {
-            console.error('Error fetching todos:', err);
-            showToast('할 일 목록을 불러오지 못했습니다.', 'error');
+        if (data.status === 'not_started') {
+            statusBadge.textContent = '출근 전';
+            statusBadge.className = 'status-badge not-started';
+            bigTimerCaption.textContent = '오늘 아직 출근하지 않았습니다.';
+            bigTimer.textContent = '00:00:00';
+            clockInBtn.style.display = 'inline-flex';
+            clockOutBtn.style.display = 'none';
+        } else if (data.status === 'working') {
+            statusBadge.textContent = '근무 중';
+            statusBadge.className = 'status-badge working';
+            bigTimerCaption.textContent = '현재 근무 경과시간';
+            startLiveTimer(data.clock_in);
+            clockInBtn.style.display = 'none';
+            clockOutBtn.style.display = 'inline-flex';
+        } else {
+            statusBadge.textContent = '근무 종료';
+            statusBadge.className = 'status-badge done';
+            bigTimerCaption.textContent = '오늘 근무시간';
+            bigTimer.textContent = formatMinutesAsClock(data.work_minutes);
+            clockInBtn.style.display = 'none';
+            clockOutBtn.style.display = 'none';
         }
+
+        statTodayMinutes.textContent = formatMinutes(data.work_minutes);
+        statExpectedOut.textContent = data.expected_clock_out ? timeOnly(data.expected_clock_out) : '-';
+
+        renderDiff(data);
     }
 
-    // 4. Render Todos
-    function renderTodos(todos) {
-        todoList.innerHTML = '';
-        visibleCount.textContent = todos.length;
+    function formatMinutesAsClock(minutes) {
+        if (minutes === null || minutes === undefined) return '00:00:00';
+        const h = String(Math.floor(minutes / 60)).padStart(2, '0');
+        const m = String(minutes % 60).padStart(2, '0');
+        return `${h}시간 ${m}분`;
+    }
 
-        if (todos.length === 0) {
-            emptyState.style.display = 'block';
+    function renderDiff(data) {
+        if (data.work_minutes === null || data.work_minutes === undefined) {
+            statDiffLabel.textContent = '목표 근무시간';
+            statDiffValue.textContent = formatMinutes(data.target_minutes);
             return;
         }
+        const diff = data.work_minutes - data.target_minutes;
+        if (diff >= 0) {
+            statDiffLabel.textContent = '초과근무';
+            statDiffValue.textContent = diff === 0 ? '정확히 달성' : formatMinutes(diff);
+        } else {
+            statDiffLabel.textContent = '부족시간';
+            statDiffValue.textContent = formatMinutes(-diff);
+        }
+    }
 
-        emptyState.style.display = 'none';
+    function startLiveTimer(clockInStr) {
+        const start = parseWallClock(clockInStr);
+        function tick() {
+            const elapsed = nowKST().getTime() - start.getTime();
+            bigTimer.textContent = formatElapsed(elapsed);
+        }
+        tick();
+        liveTimerHandle = setInterval(tick, 1000);
+    }
 
-        todos.forEach(todo => {
-            const card = document.createElement('div');
-            const priorityClass = todo.priority === '높음' ? 'priority-high' :
-                                  todo.priority === '보통' ? 'priority-medium' : 'priority-low';
-            
-            card.className = `todo-card ${priorityClass} ${todo.completed ? 'completed' : ''}`;
-            card.dataset.id = todo.id;
+    function stopLiveTimer() {
+        if (liveTimerHandle) {
+            clearInterval(liveTimerHandle);
+            liveTimerHandle = null;
+        }
+    }
 
-            // Category tag style
-            let catClass = 'other';
-            if (todo.category.includes('DNA')) catClass = 'dna';
-            else if (todo.category.includes('업무')) catClass = 'work';
-            else if (todo.category.includes('자기계발')) catClass = 'personal';
-            else if (todo.category.includes('회의')) catClass = 'meeting';
-
-            // Due Date Badge calculation
-            let dueBadgeHtml = '';
-            if (todo.due_date) {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const due = new Date(todo.due_date);
-                due.setHours(0, 0, 0, 0);
-
-                const diffDays = Math.round((due - today) / (1000 * 60 * 60 * 24));
-                let dueClass = 'upcoming';
-                let dueLabel = todo.due_date;
-
-                if (!todo.completed) {
-                    if (diffDays < 0) {
-                        dueClass = 'overdue';
-                        dueLabel = `기한초과 (${Math.abs(diffDays)}일 지남)`;
-                    } else if (diffDays === 0) {
-                        dueClass = 'today';
-                        dueLabel = '오늘 마감';
-                    } else if (diffDays === 1) {
-                        dueClass = 'today';
-                        dueLabel = '내일 마감 (D-1)';
-                    } else {
-                        dueLabel = `D-${diffDays} (${todo.due_date})`;
-                    }
-                }
-
-                dueBadgeHtml = `<span class="due-badge ${dueClass}">📅 ${dueLabel}</span>`;
+    // ---- Clock in / out -------------------------------------------------
+    async function handleApiAction(url) {
+        try {
+            const res = await fetch(url, { method: 'POST' });
+            const body = await res.json();
+            if (!res.ok) {
+                showToast(body.error || '요청을 처리하지 못했습니다.', 'error');
+                return;
             }
+            await refreshAll();
+            return body;
+        } catch (err) {
+            console.error('API action error:', err);
+            showToast('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 'error');
+        }
+    }
 
-            // Priority badge
-            const priorityBadgeClass = todo.priority === '높음' ? 'high' :
-                                       todo.priority === '보통' ? 'medium' : 'low';
+    clockInBtn.addEventListener('click', async () => {
+        const result = await handleApiAction('/api/work/clock-in');
+        if (result) showToast(`출근 처리되었습니다 (${timeOnly(result.clock_in)})`, 'success');
+    });
 
-            card.innerHTML = `
-                <div class="todo-checkbox-container">
-                    <input 
-                        type="checkbox" 
-                        class="todo-checkbox" 
-                        ${todo.completed ? 'checked' : ''} 
-                        aria-label="완료 여부 변경"
-                    >
+    clockOutBtn.addEventListener('click', async () => {
+        const result = await handleApiAction('/api/work/clock-out');
+        if (result) showToast(`퇴근 처리되었습니다 (${timeOnly(result.clock_out)})`, 'success');
+    });
+
+    // ---- Weekly summary ---------------------------------------------------
+    async function fetchWeekly() {
+        try {
+            const res = await fetch(`/api/work/summary/weekly?date=${todayKSTStr()}`);
+            if (!res.ok) throw new Error('weekly fetch failed');
+            const data = await res.json();
+            renderWeekly(data);
+        } catch (err) {
+            console.error('fetchWeekly error:', err);
+        }
+    }
+
+    function renderWeekly(data) {
+        weeklyTotal.textContent = formatMinutes(data.total_minutes);
+        weekBarChart.innerHTML = '';
+        const scaleMax = Math.max(480, ...data.days.map(d => d.work_minutes));
+
+        data.days.forEach(day => {
+            const dow = new Date(day.date + 'T00:00:00').getDay();
+            const heightPct = scaleMax > 0 ? Math.min((day.work_minutes / scaleMax) * 100, 100) : 0;
+
+            const col = document.createElement('div');
+            col.className = 'week-bar-col';
+            const isToday = day.date === todayKSTStr();
+            col.innerHTML = `
+                <span class="week-bar-minutes">${day.work_minutes > 0 ? formatMinutes(day.work_minutes) : ''}</span>
+                <div class="week-bar-track">
+                    <div class="week-bar-fill" style="height:${heightPct}%"></div>
                 </div>
-                <div class="todo-main-content">
-                    <div class="todo-meta">
-                        <span class="category-tag ${catClass}">${escapeHtml(todo.category)}</span>
-                        <span class="priority-badge ${priorityBadgeClass}">우선순위: ${escapeHtml(todo.priority)}</span>
-                        ${dueBadgeHtml}
-                    </div>
-                    <h3 class="todo-title">${escapeHtml(todo.title)}</h3>
-                    ${todo.description ? `<p class="todo-desc">${escapeHtml(todo.description)}</p>` : ''}
-                </div>
-                <div class="todo-actions">
-                    <button class="action-btn btn-edit" title="수정" aria-label="수정">✏️</button>
-                    <button class="action-btn btn-delete" title="삭제" aria-label="삭제">🗑️</button>
-                </div>
+                <span class="week-bar-label ${isToday ? 'today' : ''}">${DAY_NAMES[dow]}</span>
             `;
-
-            // Event Listeners for Card Items
-            const checkbox = card.querySelector('.todo-checkbox');
-            checkbox.addEventListener('change', () => toggleTodo(todo.id, checkbox));
-
-            const editBtn = card.querySelector('.btn-edit');
-            editBtn.addEventListener('click', () => openEditModal(todo));
-
-            const deleteBtn = card.querySelector('.btn-delete');
-            deleteBtn.addEventListener('click', () => deleteTodo(todo.id, card));
-
-            todoList.appendChild(card);
+            weekBarChart.appendChild(col);
         });
     }
 
-    // 5. Toggle Todo Status
-    async function toggleTodo(id, checkbox) {
+    // ---- Monthly summary ---------------------------------------------------
+    async function fetchMonthly() {
         try {
-            const res = await fetch(`/api/todos/${id}/toggle`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (!res.ok) throw new Error('Toggle failed');
-            const updated = await res.json();
-
-            // Find card & apply completion styling
-            const card = document.querySelector(`.todo-card[data-id="${id}"]`);
-            if (card) {
-                if (updated.completed) {
-                    card.classList.add('completed');
-                    triggerConfetti();
-                    showToast('🎉 할 일을 완료했습니다!', 'success');
-                } else {
-                    card.classList.remove('completed');
-                    showToast('할 일을 진행 중으로 변경했습니다.', 'info');
-                }
-            }
-
-            fetchStats();
+            const now = nowKST();
+            const res = await fetch(`/api/work/summary/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
+            if (!res.ok) throw new Error('monthly fetch failed');
+            const data = await res.json();
+            monthlyTitle.textContent = `${data.year}년 ${data.month}월`;
+            monthlyWorkDays.textContent = `${data.work_days}일`;
+            monthlyTotal.textContent = formatMinutes(data.total_minutes);
+            monthlyAvg.textContent = formatMinutes(data.avg_minutes);
         } catch (err) {
-            console.error('Toggle error:', err);
-            checkbox.checked = !checkbox.checked;
-            showToast('상태 변경에 실패했습니다.', 'error');
+            console.error('fetchMonthly error:', err);
         }
     }
 
-    // 6. Delete Todo
-    async function deleteTodo(id, cardElement) {
-        if (!confirm('이 할 일을 삭제하시겠습니까?')) return;
-
+    // ---- Date lookup ---------------------------------------------------
+    async function fetchLookup(dateStr) {
+        if (!dateStr) return;
         try {
-            const res = await fetch(`/api/todos/${id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error('Delete failed');
-
-            cardElement.style.transition = 'all 0.25s ease';
-            cardElement.style.opacity = '0';
-            cardElement.style.transform = 'scale(0.9)';
-
-            setTimeout(() => {
-                fetchTodos();
-            }, 250);
-
-            showToast('할 일이 삭제되었습니다.', 'info');
+            const res = await fetch(`/api/work/records/${dateStr}`);
+            const data = await res.json();
+            if (!res.ok) {
+                lookupResult.textContent = data.error || '조회에 실패했습니다.';
+                return;
+            }
+            if (data.status === 'not_started') {
+                lookupResult.textContent = `${dateStr} : 근무 기록이 없습니다.`;
+            } else {
+                lookupResult.textContent =
+                    `${dateStr} · 출근 ${timeOnly(data.clock_in)} ~ 퇴근 ${timeOnly(data.clock_out)} · ` +
+                    `휴게 ${data.break_minutes}분 · 근무시간 ${formatMinutes(data.work_minutes)}`;
+            }
         } catch (err) {
-            console.error('Delete error:', err);
+            console.error('fetchLookup error:', err);
+            lookupResult.textContent = '조회 중 오류가 발생했습니다.';
+        }
+    }
+
+    lookupDateInput.value = todayKSTStr();
+    lookupDateInput.addEventListener('change', () => fetchLookup(lookupDateInput.value));
+
+    prevDateBtn.addEventListener('click', () => {
+        const d = new Date(lookupDateInput.value + 'T00:00:00');
+        d.setDate(d.getDate() - 1);
+        lookupDateInput.value = toDateInputValue(d);
+        fetchLookup(lookupDateInput.value);
+    });
+
+    nextDateBtn.addEventListener('click', () => {
+        const d = new Date(lookupDateInput.value + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        lookupDateInput.value = toDateInputValue(d);
+        fetchLookup(lookupDateInput.value);
+    });
+
+    lookupTodayBtn.addEventListener('click', () => {
+        lookupDateInput.value = todayKSTStr();
+        fetchLookup(lookupDateInput.value);
+    });
+
+    function toDateInputValue(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    // ---- Records list ---------------------------------------------------
+    async function fetchRecords() {
+        try {
+            const res = await fetch('/api/work/records?limit=30');
+            if (!res.ok) throw new Error('records fetch failed');
+            const records = await res.json();
+            renderRecords(records);
+        } catch (err) {
+            console.error('fetchRecords error:', err);
+            showToast('근무 기록을 불러오지 못했습니다.', 'error');
+        }
+    }
+
+    function renderRecords(records) {
+        recordsList.innerHTML = '';
+
+        if (records.length === 0) {
+            emptyState.style.display = 'block';
+            return;
+        }
+        emptyState.style.display = 'none';
+
+        records.forEach(record => {
+            const row = document.createElement('div');
+            row.className = 'records-row';
+            row.dataset.id = record.id;
+            row.innerHTML = `
+                <span data-label="날짜">${record.work_date}</span>
+                <span data-label="출근">${timeOnly(record.clock_in)}</span>
+                <span data-label="퇴근">${timeOnly(record.clock_out)}</span>
+                <span data-label="휴게">${record.break_minutes}분</span>
+                <span data-label="근무시간">${formatMinutes(record.work_minutes)}</span>
+                <span class="records-actions">
+                    <button class="action-btn btn-edit" title="수정" aria-label="수정">✏️</button>
+                    <button class="action-btn btn-delete" title="삭제" aria-label="삭제">🗑️</button>
+                </span>
+            `;
+
+            row.querySelector('.btn-edit').addEventListener('click', () => openEditModal(record));
+            row.querySelector('.btn-delete').addEventListener('click', () => deleteRecord(record.id));
+
+            recordsList.appendChild(row);
+        });
+    }
+
+    async function deleteRecord(id) {
+        if (!confirm('이 근무 기록을 삭제하시겠습니까?')) return;
+        try {
+            const res = await fetch(`/api/work/records/${id}`, { method: 'DELETE' });
+            const body = await res.json();
+            if (!res.ok) {
+                showToast(body.error || '삭제에 실패했습니다.', 'error');
+                return;
+            }
+            showToast('근무 기록이 삭제되었습니다.', 'info');
+            await refreshAll();
+        } catch (err) {
+            console.error('deleteRecord error:', err);
             showToast('삭제 중 오류가 발생했습니다.', 'error');
         }
     }
 
-    // 7. Clear All Completed
-    clearCompletedBtn.addEventListener('click', async () => {
-        if (!confirm('완료된 모든 할 일을 정리(삭제)하시겠습니까?')) return;
-
-        try {
-            const res = await fetch('/api/todos/clear-completed', { method: 'POST' });
-            if (!res.ok) throw new Error('Clear completed failed');
-            const result = await res.json();
-
-            showToast(`${result.deleted_count}개의 완료된 항목을 정리했습니다.`, 'success');
-            fetchTodos();
-        } catch (err) {
-            console.error('Clear error:', err);
-            showToast('완료 항목 정리에 실패했습니다.', 'error');
-        }
-    });
-
-    // 8. Quick Add Handler
-    quickAddForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const title = quickTitleInput.value.trim();
-        if (!title) return;
-
-        const payload = {
-            title: title,
-            description: '',
-            category: quickCategorySelect.value,
-            priority: quickPrioritySelect.value,
-            due_date: quickDueDateInput.value
-        };
-
-        try {
-            const res = await fetch('/api/todos', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (!res.ok) throw new Error('Create failed');
-            quickTitleInput.value = '';
-            showToast('새 할 일이 추가되었습니다!', 'success');
-            fetchTodos();
-        } catch (err) {
-            console.error('Quick add error:', err);
-            showToast('할 일 추가에 실패했습니다.', 'error');
-        }
-    });
-
-    // 9. Detailed Add Modal
-    function openAddModal() {
-        detailedAddForm.reset();
-        const todayIso = new Date().toISOString().split('T')[0];
-        document.getElementById('modalAddDueDate').value = todayIso;
-        addModalOverlay.classList.add('active');
-        document.getElementById('modalAddTitle').focus();
-    }
-
-    function closeAddModal() {
-        addModalOverlay.classList.remove('active');
-    }
-
-    openAddModalBtn.addEventListener('click', openAddModal);
-    closeAddModalBtn.addEventListener('click', closeAddModal);
-    cancelAddBtn.addEventListener('click', closeAddModal);
-    emptyAddBtn.addEventListener('click', openAddModal);
-
-    detailedAddForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const title = document.getElementById('modalAddTitle').value.trim();
-        if (!title) return;
-
-        const payload = {
-            title: title,
-            description: document.getElementById('modalAddDesc').value.trim(),
-            category: document.getElementById('modalAddCategory').value,
-            priority: document.getElementById('modalAddPriority').value,
-            due_date: document.getElementById('modalAddDueDate').value
-        };
-
-        try {
-            const res = await fetch('/api/todos', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (!res.ok) throw new Error('Create failed');
-            closeAddModal();
-            showToast('새 할 일이 등록되었습니다.', 'success');
-            fetchTodos();
-        } catch (err) {
-            console.error('Add modal error:', err);
-            showToast('등록 중 오류가 발생했습니다.', 'error');
-        }
-    });
-
-    // 10. Edit Modal
-    function openEditModal(todo) {
-        document.getElementById('editTodoId').value = todo.id;
-        document.getElementById('editTitle').value = todo.title;
-        document.getElementById('editDesc').value = todo.description || '';
-        document.getElementById('editCategory').value = todo.category;
-        document.getElementById('editPriority').value = todo.priority;
-        document.getElementById('editDueDate').value = todo.due_date || '';
+    // ---- Edit modal ---------------------------------------------------
+    function openEditModal(record) {
+        document.getElementById('editRecordId').value = record.id;
+        document.getElementById('editWorkDate').value = record.work_date;
+        document.getElementById('editClockIn').value = record.clock_in ? record.clock_in.slice(11, 16) : '';
+        document.getElementById('editClockOut').value = record.clock_out ? record.clock_out.slice(11, 16) : '';
+        document.getElementById('editBreakMinutes').value = record.break_minutes;
 
         editModalOverlay.classList.add('active');
-        document.getElementById('editTitle').focus();
     }
 
     function closeEditModal() {
@@ -386,116 +393,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     closeEditModalBtn.addEventListener('click', closeEditModal);
     cancelEditBtn.addEventListener('click', closeEditModal);
+    editModalOverlay.addEventListener('click', (e) => {
+        if (e.target === editModalOverlay) closeEditModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeEditModal();
+    });
 
     editForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const id = document.getElementById('editTodoId').value;
-        const title = document.getElementById('editTitle').value.trim();
-        if (!title) return;
+        const id = document.getElementById('editRecordId').value;
+        const workDate = document.getElementById('editWorkDate').value;
+        const clockInTime = document.getElementById('editClockIn').value;
+        const clockOutTime = document.getElementById('editClockOut').value;
+        const breakMinutes = parseInt(document.getElementById('editBreakMinutes').value, 10) || 0;
 
         const payload = {
-            title: title,
-            description: document.getElementById('editDesc').value.trim(),
-            category: document.getElementById('editCategory').value,
-            priority: document.getElementById('editPriority').value,
-            due_date: document.getElementById('editDueDate').value
+            clock_in: clockInTime ? `${workDate} ${clockInTime}:00` : null,
+            clock_out: clockOutTime ? `${workDate} ${clockOutTime}:00` : null,
+            break_minutes: breakMinutes,
         };
 
         try {
-            const res = await fetch(`/api/todos/${id}`, {
+            const res = await fetch(`/api/work/records/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
             });
-
-            if (!res.ok) throw new Error('Update failed');
+            const body = await res.json();
+            if (!res.ok) {
+                showToast(body.error || '수정에 실패했습니다.', 'error');
+                return;
+            }
             closeEditModal();
-            showToast('할 일이 수정되었습니다.', 'success');
-            fetchTodos();
+            showToast('근무 기록이 수정되었습니다.', 'success');
+            await refreshAll();
         } catch (err) {
-            console.error('Update error:', err);
+            console.error('edit submit error:', err);
             showToast('수정 중 오류가 발생했습니다.', 'error');
         }
     });
 
-    // Close Modals on Backdrop Click or ESC Key
-    [addModalOverlay, editModalOverlay].forEach(overlay => {
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.classList.remove('active');
-            }
-        });
-    });
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            addModalOverlay.classList.remove('active');
-            editModalOverlay.classList.remove('active');
-        }
-    });
-
-    // 11. Search & Filters Event Listeners
-    let searchDebounce = null;
-    searchInput.addEventListener('input', (e) => {
-        clearTimeout(searchDebounce);
-        const val = e.target.value;
-        clearSearchBtn.style.display = val ? 'block' : 'none';
-
-        searchDebounce = setTimeout(() => {
-            state.search = val;
-            fetchTodos();
-        }, 200);
-    });
-
-    clearSearchBtn.addEventListener('click', () => {
-        searchInput.value = '';
-        state.search = '';
-        clearSearchBtn.style.display = 'none';
-        fetchTodos();
-    });
-
-    // Status Tabs
-    statusTabs.addEventListener('click', (e) => {
-        const btn = e.target.closest('.tab-btn');
-        if (!btn) return;
-
-        statusTabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        state.status = btn.dataset.status;
-        fetchTodos();
-    });
-
-    // Category Pills
-    categoryPills.addEventListener('click', (e) => {
-        const pill = e.target.closest('.pill-btn');
-        if (!pill) return;
-
-        categoryPills.querySelectorAll('.pill-btn').forEach(p => p.classList.remove('active'));
-        pill.classList.add('active');
-
-        state.category = pill.dataset.category;
-        fetchTodos();
-    });
-
-    // Sort By
-    sortBySelect.addEventListener('change', (e) => {
-        state.sortBy = e.target.value;
-        fetchTodos();
-    });
-
-    // Click Stat Card to Filter Status
-    document.querySelectorAll('.stat-card[data-filter-status]').forEach(card => {
-        card.addEventListener('click', () => {
-            const filterStatus = card.dataset.filterStatus;
-            const targetTab = statusTabs.querySelector(`.tab-btn[data-status="${filterStatus}"]`);
-            if (targetTab) {
-                targetTab.click();
-            }
-        });
-    });
-
-    // 12. Lightweight Toast System
+    // ---- Toast system ---------------------------------------------------
     function showToast(message, type = 'info') {
         const container = document.getElementById('toastContainer');
         const toast = document.createElement('div');
@@ -509,72 +448,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => toast.remove(), 300);
-        }, 2800);
+        }, 3200);
     }
 
-    // 13. Confetti Animation Effect (Pure Canvas)
-    function triggerConfetti() {
-        const canvas = document.getElementById('confettiCanvas');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-
-        const particles = [];
-        const colors = ['#2563eb', '#38bdf8', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ffffff'];
-
-        for (let i = 0; i < 70; i++) {
-            particles.push({
-                x: canvas.width / 2 + (Math.random() * 200 - 100),
-                y: canvas.height / 2 + (Math.random() * 100 - 50),
-                r: Math.random() * 6 + 3,
-                color: colors[Math.floor(Math.random() * colors.length)],
-                vx: (Math.random() - 0.5) * 12,
-                vy: (Math.random() - 1.2) * 10,
-                gravity: 0.25,
-                alpha: 1,
-                rot: Math.random() * 360,
-                rotSpeed: (Math.random() - 0.5) * 10
-            });
-        }
-
-        let animationFrame;
-        function animate() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            let activeCount = 0;
-
-            particles.forEach(p => {
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += p.gravity;
-                p.alpha -= 0.015;
-                p.rot += p.rotSpeed;
-
-                if (p.alpha > 0) {
-                    activeCount++;
-                    ctx.save();
-                    ctx.translate(p.x, p.y);
-                    ctx.rotate((p.rot * Math.PI) / 180);
-                    ctx.globalAlpha = p.alpha;
-                    ctx.fillStyle = p.color;
-                    ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r * 1.5);
-                    ctx.restore();
-                }
-            });
-
-            if (activeCount > 0) {
-                animationFrame = requestAnimationFrame(animate);
-            } else {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                cancelAnimationFrame(animationFrame);
-            }
-        }
-
-        animate();
-    }
-
-    // Utility: HTML Escaper
     function escapeHtml(str) {
         if (!str) return '';
         const div = document.createElement('div');
@@ -582,7 +458,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return div.innerHTML;
     }
 
-    // Initial Load
+    // ---- Bootstrap ---------------------------------------------------
+    async function refreshAll() {
+        await Promise.all([fetchToday(), fetchWeekly(), fetchMonthly(), fetchRecords()]);
+    }
+
     initDateDisplay();
-    fetchTodos();
+    refreshAll();
+    fetchLookup(lookupDateInput.value);
 });

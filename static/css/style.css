@@ -989,6 +989,261 @@ body {
     to { transform: translateX(0); opacity: 1; }
 }
 
+/* ==========================================================================
+   WORK STATUS CARD
+   ========================================================================== */
+.status-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 32px 24px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    box-shadow: var(--shadow-md);
+}
+
+.status-badge {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 18px;
+    border-radius: var(--radius-full);
+    letter-spacing: 0.5px;
+}
+.status-badge.not-started { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+.status-badge.working { background: rgba(16, 185, 129, 0.18); color: #34d399; box-shadow: 0 0 16px rgba(16, 185, 129, 0.25); }
+.status-badge.done { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
+
+.status-times {
+    display: flex;
+    gap: 32px;
+    margin-top: 8px;
+}
+.status-time-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.status-time-label {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.status-time-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.big-timer {
+    font-size: 48px;
+    font-weight: 800;
+    font-family: 'Plus Jakarta Sans', var(--font-family);
+    color: #fff;
+    letter-spacing: 1px;
+    margin-top: 8px;
+}
+.big-timer-caption {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.btn-clock {
+    font-size: 16px;
+    padding: 14px 48px;
+    border-radius: var(--radius-full);
+    margin-top: 8px;
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #e11d48, #f43f5e);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
+}
+.btn-danger:hover {
+    background: linear-gradient(135deg, #be123c, #e11d48);
+    box-shadow: 0 6px 20px rgba(244, 63, 94, 0.5);
+}
+
+/* Mini stats row reuses .stats-section grid but with 3 equal columns */
+.stats-section.mini-stats {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+/* ==========================================================================
+   WEEKLY / MONTHLY SUMMARY
+   ========================================================================== */
+.summary-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.summary-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
+}
+
+.summary-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 16px;
+}
+.summary-card-header h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+}
+.summary-total {
+    font-size: 15px;
+    font-weight: 700;
+    color: #38bdf8;
+}
+
+.week-bar-chart {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 8px;
+    height: 140px;
+}
+.week-bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    gap: 6px;
+}
+.week-bar-minutes {
+    font-size: 10px;
+    color: var(--text-subtle);
+    white-space: nowrap;
+}
+.week-bar-track {
+    flex: 1;
+    width: 100%;
+    max-width: 28px;
+    display: flex;
+    align-items: flex-end;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+.week-bar-fill {
+    width: 100%;
+    background: linear-gradient(180deg, #3b82f6, #06b6d4);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    min-height: 2px;
+    transition: height 0.4s ease-out;
+}
+.week-bar-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.week-bar-label.today {
+    color: #60a5fa;
+}
+
+.monthly-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.monthly-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.monthly-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+.monthly-label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+.monthly-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+}
+
+/* ==========================================================================
+   DATE LOOKUP
+   ========================================================================== */
+.date-lookup-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.date-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.date-lookup-result {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ==========================================================================
+   RECORDS TABLE
+   ========================================================================== */
+.records-table {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.records-row {
+    display: grid;
+    grid-template-columns: 1.2fr 0.9fr 0.9fr 0.8fr 1fr 0.8fr;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 13px;
+}
+.records-row-head {
+    background: transparent;
+    border: none;
+    color: var(--text-subtle);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    padding: 0 14px 8px;
+}
+.records-row:not(.records-row-head):hover {
+    background: rgba(26, 36, 61, 0.85);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+.records-actions {
+    display: flex;
+    gap: 6px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 900px) {
     .stats-section {
@@ -996,6 +1251,12 @@ body {
     }
     .stat-card.progress-card {
         grid-column: span 2;
+    }
+    .stats-section.mini-stats {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .summary-grid {
+        grid-template-columns: 1fr;
     }
 }
 @media (max-width: 600px) {
@@ -1005,7 +1266,52 @@ body {
     .stat-card.progress-card {
         grid-column: span 1;
     }
+    .stats-section.mini-stats {
+        grid-template-columns: 1fr;
+    }
     .form-row {
         flex-direction: column;
     }
+    .big-timer {
+        font-size: 34px;
+    }
+    .status-times {
+        gap: 20px;
+    }
+    .btn-clock {
+        width: 100%;
+        padding: 16px;
+    }
+    .date-nav {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .date-nav input, .date-nav button {
+        width: 100%;
+    }
+
+    /* Records table becomes stacked cards on mobile */
+    .records-row-head {
+        display: none;
+    }
+    .records-row {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "date actions"
+            "in out"
+            "break work";
+    }
+    .records-row span[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 10px;
+        color: var(--text-subtle);
+        margin-bottom: 2px;
+    }
+    .records-row span[data-label="날짜"] { grid-area: date; }
+    .records-row span[data-label="출근"] { grid-area: in; }
+    .records-row span[data-label="퇴근"] { grid-area: out; }
+    .records-row span[data-label="휴게"] { grid-area: break; }
+    .records-row span[data-label="근무시간"] { grid-area: work; }
+    .records-row .records-actions { grid-area: actions; justify-self: end; }
 }

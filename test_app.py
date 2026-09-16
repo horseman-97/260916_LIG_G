@@ -8,51 +8,41 @@ def run_tests():
     assert r.status_code == 200, f'Index failed: {r.status_code}'
     print('[OK] GET / returned 200 OK')
 
-    # Test stats
-    r = client.get('/api/stats')
-    assert r.status_code == 200, f'Stats failed: {r.status_code}'
-    stats = r.get_json()
-    print('[OK] GET /api/stats:', stats)
+    # Clean up any existing record for today so the test is repeatable
+    r = client.get('/api/work/today')
+    assert r.status_code == 200, f'Today failed: {r.status_code}'
+    today = r.get_json()
+    if today.get('id'):
+        client.delete(f'/api/work/records/{today["id"]}')
 
-    # Test todos
-    r = client.get('/api/todos')
-    assert r.status_code == 200, f'Todos failed: {r.status_code}'
-    todos = r.get_json()
-    print(f'[OK] GET /api/todos returned {len(todos)} items')
+    # Test clock-in
+    r = client.post('/api/work/clock-in')
+    assert r.status_code == 201, f'Clock-in failed: {r.status_code}'
+    record = r.get_json()
+    record_id = record['id']
+    assert record['status'] == 'working'
+    print(f'[OK] POST /api/work/clock-in created record {record_id}: {record["clock_in"]}')
 
-    # Test create
-    r = client.post('/api/todos', json={
-        'title': '자동 검증 투두 테스트',
-        'description': '테스트 설명 내용',
-        'category': 'DNA 과제',
-        'priority': '높음',
-        'due_date': '2026-09-30'
-    })
-    assert r.status_code == 201, f'Create failed: {r.status_code}'
-    new_todo = r.get_json()
-    new_id = new_todo['id']
-    print(f'[OK] POST /api/todos created ID {new_id}: {new_todo["title"]}')
+    # Duplicate clock-in should be rejected
+    r = client.post('/api/work/clock-in')
+    assert r.status_code == 400, 'Duplicate clock-in should fail'
+    print('[OK] Duplicate clock-in correctly rejected')
 
-    # Test toggle
-    r = client.patch(f'/api/todos/{new_id}/toggle')
-    assert r.status_code == 200, f'Toggle failed: {r.status_code}'
-    assert r.get_json()['completed'] == 1, 'Completed status should be 1'
-    print('[OK] PATCH toggle completed = 1')
+    # Test clock-out
+    r = client.post('/api/work/clock-out')
+    assert r.status_code == 200, f'Clock-out failed: {r.status_code}'
+    result = r.get_json()
+    assert result['status'] == 'done'
+    print(f'[OK] POST /api/work/clock-out: worked {result["work_minutes"]} minutes')
 
-    # Test update
-    r = client.put(f'/api/todos/{new_id}', json={
-        'title': '수정된 투두 제목',
-        'description': '수정된 내용',
-        'category': '업무/프로젝트',
-        'priority': '보통',
-        'due_date': '2026-10-01'
-    })
-    assert r.status_code == 200, f'Update failed: {r.status_code}'
-    assert r.get_json()['title'] == '수정된 투두 제목', 'Title should be updated'
-    print('[OK] PUT update succeeded')
+    # Test records list
+    r = client.get('/api/work/records')
+    assert r.status_code == 200
+    records = r.get_json()
+    print(f'[OK] GET /api/work/records returned {len(records)} items')
 
-    # Test delete
-    r = client.delete(f'/api/todos/{new_id}')
+    # Cleanup
+    r = client.delete(f'/api/work/records/{record_id}')
     assert r.status_code == 200, f'Delete failed: {r.status_code}'
     print('[OK] DELETE succeeded')
 
