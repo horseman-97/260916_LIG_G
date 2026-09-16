@@ -460,10 +460,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ---- Bootstrap ---------------------------------------------------
     async function refreshAll() {
-        await Promise.all([fetchToday(), fetchWeekly(), fetchMonthly(), fetchRecords()]);
+        await Promise.all([
+            fetchToday(),
+            fetchWeekly(),
+            fetchMonthly(),
+            fetchRecords(),
+            fetchLookup(lookupDateInput.value),
+        ]);
     }
 
     initDateDisplay();
     refreshAll();
-    fetchLookup(lookupDateInput.value);
 });
